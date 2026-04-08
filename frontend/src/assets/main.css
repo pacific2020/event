@@ -1,0 +1,8 @@
+@import './base.css';
+@import "@formkit/themes/genesis";
+@tailwind base;
+@tailwind components;
+
+
+
+@tailwind utilities;
