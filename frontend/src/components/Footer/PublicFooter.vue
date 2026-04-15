@@ -18,8 +18,8 @@
       <div>
         <h3 class="text-white text-lg font-semibold mb-4">Quick Links</h3>
         <ul class="space-y-2 text-sm">
-          <li>/ Home</li>
-          <li>/ Apply</li>
+          <li><router-link to="./">Home</router-link></li>
+          <li><router-link to="/apply">Apply</router-link></li>
         </ul>
       </div>
 

@@ -31,7 +31,7 @@ const getUser = async () => {
 
   } catch (error) {
 
-    router.push('/Admin/login')
+    router.push('/staff/login')
 
   } finally {
 
@@ -60,7 +60,7 @@ const cleanState = () => {
         localStorage.removeItem('token')
         localStorage.removeItem('user_role')
     
-        router.push('/Admin/login')
+        router.push('/staff/login')
     
       } catch (error) {
     

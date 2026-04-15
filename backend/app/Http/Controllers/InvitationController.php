@@ -6,72 +6,146 @@ use Illuminate\Http\Request;
 use App\Models\InvitationCard;
 use App\Jobs\ProcessInvitationJob;
 use Carbon\Carbon;
+use App\Models\Gown;
 
 class InvitationController extends Controller
 {
-    public function storeInvitation(Request $request)
-    {
-        // 1. Validation
-        $request->validate([
-            'email' => 'required|email',
-            'phonenumber' => 'required',
-            'fullname' => 'required',
-            'reg_no' => 'required',
-            'scanned_number' => 'required',
-            'parent1_name' => 'required',
-            'parent1_id' => 'required',
-             'parent1_phone' => 'required',
-            'parent2_name' => 'required',
-            'parent2_id' => 'required',
-             'parent2_phone' => 'required',
-        ]);
 
-        $entries = [
-            ['name' => $request->fullname, 'phonenumber' => $request->phonenumber,   'id' => $request->scanned_number, 'type' => 'graduand'],
-            ['name' => $request->parent1_name, 'phonenumber' => $request->parent1_phone, 'id' => $request->parent1_id,    'type' => 'parent'],
-            ['name' => $request->parent2_name, 'phonenumber' => $request->parent2_phone, 'id' => $request->parent2_id,    'type' => 'parent'],
-        ];
+public function storeInvitation(Request $request)
+{
+    // 1. Validation (Same as before)
+    $rules = [
+        'email' => 'required|email',
+        'phonenumber' => 'required',
+        'fullname' => 'required',
+        'reg_no' => 'required',
+        'scanned_number' => 'required',
+        'city' => 'required',
+        'stay' => 'required',
+    ];
 
-        $cardIds = [];
-
-foreach ($entries as $entry) {
-    // 1. First, try to find if this person already exists
-    $existingCard = InvitationCard::where('graduate_idnumber', $entry['id'])
-        ->where('type', $entry['type'])
-        ->first();
-
-    // 2. Determine the key:
-    // If they exist, keep their old key. If they are new, make a fresh one.
-    $secretKey = $existingCard ? $existingCard->secret_key : bin2hex(random_bytes(16));
-
-    // 3. Now use updateOrCreate with the specific key for THIS entry
-    $card = InvitationCard::updateOrCreate(
-        [
-            'graduate_idnumber' => $entry['id'],
-            'type'              => $entry['type'],
-        ],
-        [
-            'reg_no'     => $request->reg_no,
-            'fullname'   => $entry['name'],
-            'phonenumber'   => $entry['phonenumber'],
-            'email'      => $request->email,
-            'status'     => 'pending',
-            'is_active'  => true,
-            'secret_key' => $secretKey, // This is now guaranteed to be unique or persistent
-        ]
-    );
-
-    $cardIds[] = $card->id;
-}
-
-        // 3. Dispatch to background queue
-        ProcessInvitationJob::dispatch($request->email, $cardIds);
-
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Invitations processed. Profiles updated and processing started.'
-        ]);
+    if ($request->filled('parent1_name')) {
+        $rules['parent1_id'] = 'required';
+        $rules['parent1_phone'] = 'required';
+        $rules['parent1_province'] = 'required';
+        $rules['parent1_district'] = 'required';
+        $rules['parent1_sector'] = 'required';
+        $rules['parent1_cell'] = 'required';
+        $rules['parent1_village'] = 'required';
+        $rules['parent1_stay'] = 'required';
     }
+
+    if ($request->filled('parent2_name')) {
+        $rules['parent2_id'] = 'required';
+        $rules['parent2_phone'] = 'required';
+        $rules['parent2_province'] = 'required';
+        $rules['parent2_district'] = 'required';
+        $rules['parent2_sector'] = 'required';
+        $rules['parent2_cell'] = 'required';
+        $rules['parent2_village'] = 'required';
+        $rules['parent2_stay'] = 'required';
+    }
+
+    $request->validate($rules);
+
+    // 2. Prepare Data Entries
+    $entries = [];
+    $entries[] = [
+        'type' => 'graduand',
+        'id' => $request->scanned_number,
+        'name' => $request->fullname,
+        'phone' => $request->phonenumber,
+        'city' => $request->city,
+        'province' => null,
+        'stay' => $request->stay,
+    ];
+
+    if ($request->filled('parent1_name')) {
+        $entries[] = [
+            'type' => 'parent',
+            'id' => $request->parent1_id,
+            'name' => $request->parent1_name,
+            'phone' => $request->parent1_phone,
+            'city' => null,
+            'province' => $request->parent1_province,
+            'district' => $request->parent1_district,
+            'sector' => $request->parent1_sector,
+            'cell' => $request->parent1_cell,
+            'village' => $request->parent1_village,
+            'stay' => $request->parent1_stay,
+        ];
+    }
+
+    if ($request->filled('parent2_name')) {
+        $entries[] = [
+            'type' => 'parent',
+            'id' => $request->parent2_id,
+            'name' => $request->parent2_name,
+            'phone' => $request->parent2_phone,
+            'city' => null,
+            'province' => $request->parent2_province,
+            'district' => $request->parent2_district,
+            'sector' => $request->parent2_sector,
+            'cell' => $request->parent2_cell,
+            'village' => $request->parent2_village,
+            'stay' => $request->parent2_stay,
+        ];
+    }
+
+    $cardIds = [];
+
+    // 3. Database Transaction (Data is saved HERE)
+    \DB::transaction(function () use ($entries, $request, &$cardIds) {
+        foreach ($entries as $entry) {
+            $existing = InvitationCard::where('graduate_idnumber', $entry['id'])
+                ->where('type', $entry['type'])
+                ->first();
+
+            $card = InvitationCard::updateOrCreate(
+                [
+                    'graduate_idnumber' => $entry['id'],
+                    'type' => $entry['type']
+                ],
+                [
+                    'reg_no' => $request->reg_no,
+                    'fullname' => $entry['name'],
+                    'phonenumber' => $entry['phone'],
+                    'email' => $request->email,
+                    'city' => $entry['city'] ?? null,
+                    'province' => $entry['province'] ?? null,
+                    'district' => $entry['district'] ?? null,
+                     'sector' => $entry['sector'] ?? null,
+                     'cell' => $entry['cell'] ?? null,
+                     'village' => $entry['village'] ?? null,
+                    'stay_overnight' => $entry['stay'],
+                    'secret_key' => $existing ? $existing->secret_key : bin2hex(random_bytes(16)),
+                    'status' => 'pending',
+                    'is_active' => true,
+                ]
+            );
+            $cardIds[] = $card->id;
+        }
+    });
+
+    // 4. Gown Status Check (Move AFTER the transaction)
+    $gown = Gown::where('reg_no', $request->reg_no)->first();
+
+    if (!$gown || $gown->status !== 'Issued') {
+        return response()->json([
+            'message' => 'Details updated successfully! However, invitations will only be sent after your gown status is marked as "Issued". Current status: ' . ($gown->status ?? 'Not Found'),
+            'status' => 'gown_pending',
+            'ids' => $cardIds
+        ], 200); // Return 200 because the data update was actually successful
+    }
+
+    // 5. Dispatch the Job (Only if gown check passed)
+    ProcessInvitationJob::dispatch($request->email, $cardIds);
+
+    return response()->json([
+        'message' => 'Details updated! Invitations are being generated and sent to your email.',
+        'ids' => $cardIds
+    ]);
+}
 
 
 public function getInvitationData($reg_no)
@@ -225,6 +299,49 @@ public function viewByQr(Request $request, $secretKey)
             'message' => 'Check-in Successful!',
             'invitation' => $invitation
         ]);
+    }
+
+
+
+    public function confirmAttendance(Request $request)
+    {
+        // 1. Validate the incoming request
+        $validated = $request->validate([
+            'email'           => 'required|email',
+            'fullname'        => 'required|string|max:255',
+            'phonenumber'     => 'required|string',
+            'organization'    => 'required|string',
+            'attendance_type' => 'required|in:self,delegate,not',
+            'plate_number'    => 'nullable|string|max:20',
+        ]);
+
+        try {
+            // 2. Find the invitation by email
+            $invitation = InvitationCard::where('email', $validated['email'])->first();
+
+            if (!$invitation) {
+                return response()->json(['message' => 'Invitation record not found.'], 404);
+            }
+
+            // 3. Update the record
+
+
+            $invitation->update([
+                'fullname'     => $validated['fullname'], // Updates name if delegate is attending
+                'phonenumber'  => $validated['phonenumber'],
+                'platenumber'     => $validated['organization'], // Assuming position stores org info
+                'approval'       => $validated['attendance_type'],
+                'platenumber' => $validated['plate_number'] ?? null,
+            ]);
+
+            return response()->json([
+                'message' => 'Thank you! Your response has been recorded successfully.'
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error("Confirmation Error: " . $e->getMessage());
+            return response()->json(['message' => 'A server error occurred.'], 500);
+        }
     }
 
 }

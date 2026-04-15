@@ -6,6 +6,8 @@ use Illuminate\Http\Request;
 use App\Models\Event;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Storage;
+use App\Models\InvitationCard;
+use App\Models\GraduationList;
 
 class CreateEventController extends Controller
 {
@@ -78,8 +80,44 @@ public function showPublic(Request $request)
     ]);
 }
 
-// public function createExcel(Request $request){
+public function viewEvent(Request $request){
+   $query = Event::query();
 
-// }
+        if ($request->has('search') && $request->search != '') {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('category', 'like', "%{$search}%")
+                  ->orWhere('event_name', 'like', "%{$search}%")
+                  ->orWhere('starting_date', 'like', "%{$search}%")
+                  ->orWhere('ending_date', 'like', "%{$search}%")
+                   ->orWhere('expected_invitation', 'like', "%{$search}%")
+                   ->orWhere('generated_at', 'like', "%{$search}%");
+            });
+        }
+
+        $perPage = 10;
+        $guests = $query->orderBy('id', 'desc')->paginate($perPage);
+
+        return response()->json($guests);
+}
+
+public function deleteEvent($id){
+       $guest = Event::find($id);
+        if (!$guest) {
+            return response()->json(['message' => 'Guest not found'], 404);
+        }
+        $guest->delete();
+        return response()->json(['message' => 'Guest deleted successfully']);
+}
+
+
+public function getStats() {
+    return response()->json([
+        'events' => Event::count(),
+        'invitations' => InvitationCard::count(),
+        'graduands' => GraduationList::count()
+    ]);
+}
+
 
 }

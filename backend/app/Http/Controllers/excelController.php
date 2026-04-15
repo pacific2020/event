@@ -11,6 +11,7 @@ use setasign\Fpdi\Fpdi; // ONLY ONE OF THESE
 use App\Models\InvitationCard;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\File;
+use App\Jobs\SendInvitationGuestJob;
 
 // Chillerlan QR Code namespaces
 use chillerlan\QRCode\QRCode;
@@ -21,177 +22,116 @@ class ExcelController extends Controller
 {
   public function sendInvitations()
     {
+        // 1. Define the path to your Excel file
+        $path = public_path('storage/excel/guestinformation.xlsx');
 
-        // Increase time limit for large Excel files
-        set_time_limit(600);
-
-        $path = public_path('storage/exel/guestinformation.xlsx');
-        $qrDir = public_path('storage/qrcodes');
-        $pdfDir = public_path('storage/invitations');
-        $templatePath = public_path('storage/templates/Graduation_Invitation_final.pdf');
-
-        // Ensure directories exist
-        if (!File::exists($qrDir)) File::makeDirectory($qrDir, 0755, true);
-        if (!File::exists($pdfDir)) File::makeDirectory($pdfDir, 0755, true);
-
+        // 2. Check if the file exists before processing
         if (!File::exists($path)) {
-            return response()->json(['status' => 'error', 'message' => 'Excel file not found.']);
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Excel file not found at: ' . $path
+            ], 404);
         }
 
         try {
+            // 3. Load the Spreadsheet
             $spreadsheet = IOFactory::load($path);
             $rows = $spreadsheet->getActiveSheet()->toArray();
 
-            // Configure PHPMailer
-            $mail = new PHPMailer(true);
-            $mail->isSMTP();
-            $mail->Host       = 'mail.rp.ac.rw';
-            $mail->SMTPAuth   = true;
-            $mail->Username   = 'cyprien@rp.ac.rw';
-            $mail->Password   = 'P@sswOrD!123';
-            $mail->SMTPSecure = 'tls';
-            $mail->Port       = 587;
-            $mail->setFrom('dontreply@rp.ac.rw', 'Graduation Committee');
+            // Remove the header row
+            $data = array_slice($rows, 1);
+            $dispatchCount = 0;
 
-         // Configure Chillerlan QR Options
-            $options = new QROptions([
-                'version'         => 5,
-                'outputInterface' => \chillerlan\QRCode\Output\QRGdImagePNG::class,
-                'eccLevel'        => \chillerlan\QRCode\Common\EccLevel::H, // Using full path to be safe
-                'scale'           => 5,
-                'imageBase64'     => false,
-            ]);
+            foreach ($data as $index => $row) {
+                // Basic validation: skip if name (row 0) or email (row 1) is missing
+                if (empty(trim($row[0])) || empty(trim($row[1]))) {
+                    continue;
+                }
 
-            $successCount = 0;
+                $email = trim($row[1]);
 
-            foreach (array_slice($rows, 1) as $index => $row) {
-    // Basic row validation
-    if (!isset($row[0]) || empty(trim($row[0]))) continue;
+                // 4. Duplicate Check: Skip if this email already exists in the database
+                if (InvitationCard::where('email', $email)->exists()) {
+                    Log::info("Skipping $email: Invitation already exists in database.");
+                    continue;
+                }
 
-    $name  = trim($row[0]);
-    $email = isset($row[1]) ? trim($row[1]) : null;
+                // 5. Dispatch to Queue: Each row becomes a background task
+                // This happens instantly (approx 2ms per row)
+                SendInvitationGuestJob::dispatch($row);
 
-    if (!$email || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        Log::warning("Invalid email at row " . ($index + 2));
-        continue;
-    }
-
-    // 1. CORRECTED CHECK: Check if email already exists in the database
-    $alreadyExists = InvitationCard::where('email', $email)->exists();
-
-    if ($alreadyExists) {
-        Log::info("Skipping $email: Invitation already sent.");
-            return response()->json([
-                'status' => 'error',
-                'message' => "Skipping $email: Invitation already sent."
-            ]);
-        continue; // Move to the next person in the Excel sheet
-    }
-
-    try {
-        $secret_key = strtoupper(uniqid('INV-'));
-        $qrPath = $qrDir . '/' . $secret_key . '.png';
-
-        // --- CHILLERLAN QR GENERATION ---
-        (new QRCode($options))->render($secret_key, $qrPath);
-
-        // --- PDF GENERATION (FPDI) ---
-        $pdf = new Fpdi();
-        $pdf->AddPage();
-        if (!File::exists($templatePath)) throw new \Exception("PDF Template missing.");
-
-        $pdf->setSourceFile($templatePath);
-        $pdf->useTemplate($pdf->importPage(1));
-
-        $pdf->SetFont('Arial', 'B', 16);
-        $pdf->SetXY(40, 120);
-        $pdf->Cell(100, 50, $name, 0, 0, 'C');
-
-        // Place QR on PDF
-        $pdf->Image($qrPath, 90, 250, 35, 35);
-
-        $pdfFileName = $secret_key . '.pdf';
-        $pdfPath = $pdfDir . '/' . $pdfFileName;
-        $pdf->Output($pdfPath, 'F');
-
-        // --- SAVE TO DATABASE ---
-        InvitationCard::create([
-            'fullname' => $name,
-            'position' => $name,
-            'email'    => $email,
-            'secret_key' => $secret_key,
-            'status'   => 'SENT',
-            'pdf'      => $pdfFileName,
-            'date_generated' => now()
-        ]);
-
-        // --- SEND EMAIL ---
-        $mail->clearAddresses();
-        $mail->clearAttachments();
-        $mail->addAddress($email);
-        $mail->Subject = 'Official Graduation Invitation';
-        $mail->isHTML(true);
-        $mail->Body = "Dear <b>{$name}</b>,<br><br>Attached is your digital invitation card for the graduation ceremony.";
-        $mail->addAttachment($pdfPath);
-        $mail->send();
-
-        // 2. STORAGE CLEANUP: Delete files after sending to save space
-        if (File::exists($qrPath)) File::delete($qrPath);
-        if (File::exists($pdfPath)) File::delete($pdfPath);
-
-        $successCount++;
-
-    } catch (\Exception $e) {
-        Log::error("Error for {$email}: " . $e->getMessage());
-
-        // Ensure cleanup happens even if sending fails
-        if (isset($qrPath) && File::exists($qrPath)) File::delete($qrPath);
-        if (isset($pdfPath) && File::exists($pdfPath)) File::delete($pdfPath);
-    }
-}
+                $dispatchCount++;
+            }
 
             return response()->json([
                 'status' => 'success',
-                'message' => "Successfully sent $successCount invitations."
+                'message' => "Successfully queued $dispatchCount invitations for processing.",
+                'total_rows_found' => count($data)
             ]);
 
         } catch (\Exception $e) {
+            Log::error("Excel Processing Error: " . $e->getMessage());
             return response()->json([
                 'status' => 'error',
-                'message' => 'System Error: ' . $e->getMessage()
+                'message' => 'Failed to process Excel file: ' . $e->getMessage()
             ], 500);
         }
     }
 
-    public function viewGuestInvitation(Request $request)
-    {
-        $query = InvitationCard::query();
+public function viewGuestInvitation(Request $request)
+{
+    // Start the query with the strict filter first
+    $query = InvitationCard::query()->whereNull('reg_no');
 
-        if ($request->has('search') && $request->search != '') {
-            $search = $request->search;
-            $query->where(function($q) use ($search) {
-                $q->where('fullname', 'like', "%{$search}%")
-                  ->orWhere('email', 'like', "%{$search}%")
-                  ->orWhere('position', 'like', "%{$search}%")
-                  ->orWhere('phonenumber', 'like', "%{$search}%");
-            });
-        }
+    // Handle Search
+    if ($request->filled('search')) {
+        $search = $request->search;
 
-        $perPage = 10;
-        $guests = $query->orderBy('id', 'desc')->paginate($perPage);
-
-        return response()->json($guests);
+        // Wrapping in a function ensures the "OR" logic stays inside
+        // parentheses and doesn't break the "whereNull" logic.
+        $query->where(function($q) use ($search) {
+            $q->where('fullname', 'like', "%{$search}%")
+              ->orWhere('email', 'like', "%{$search}%")
+              ->orWhere('position', 'like', "%{$search}%")
+              ->orWhere('phonenumber', 'like', "%{$search}%");
+        });
     }
 
-    public function deleteGuest($id)
-    {
-        $guest = InvitationCard::find($id);
-        if (!$guest) {
-            return response()->json(['message' => 'Guest not found'], 404);
-        }
-        $guest->delete();
-        return response()->json(['message' => 'Guest deleted successfully']);
+    // Dynamic pagination (Optional: allow frontend to control perPage)
+    $perPage = $request->get('per_page', 10);
+
+    // Order and Execute
+    $guests = $query->orderBy('id', 'desc')->paginate($perPage);
+
+    return response()->json($guests);
+}
+
+
+
+
+public function deleteGuest($id)
+{
+    $guest = InvitationCard::find($id);
+
+    if (!$guest) {
+        return response()->json(['message' => 'Guest not found'], 404);
     }
+
+    // 1. Define the full path to the file
+    // Use public_path or storage_path depending on where your files are stored
+    $filePath = public_path('storage/invitations/' . $guest->pdf);
+
+    // 2. Delete the physical file first (if it exists)
+    if ($guest->pdf && file_exists($filePath)) {
+        unlink($filePath);
+    }
+
+    // 3. Delete the record from the database
+    $guest->delete();
+
+    // 4. Return the response last
+    return response()->json(['message' => 'Guest and invitations deleted successfully']);
+}
 
 public function sendReminders()
 {

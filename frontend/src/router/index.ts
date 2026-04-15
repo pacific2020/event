@@ -8,6 +8,7 @@ import GraduandLayout from '@/layouts/GraduandLayout.vue';
 import RecordLayout from '@/layouts/RecordLayout.vue';
 import ScannerLayout from '@/layouts/ScannerLayout.vue';
 import ProtocalLayout from '@/layouts/ProtocalLayout.vue';
+import GuestConfirmation from '@/views/GuestConfirmation.vue';
 
 // Views (Consider lazy loading these for better performance)
 const HomeView = () => import('../views/HomeView.vue');
@@ -21,6 +22,8 @@ const routes: RouteRecordRaw[] = [
     children: [
       { path: '', name: 'home', component: HomeView },
       { path: 'apply', name: 'application', component: () => import('@/views/application.vue') },
+       { path: 'staff/login', name: 'staff.login', component: LoginView },
+       { path: 'guest/confirmation/:email', name: 'guest.confirmation', component: GuestConfirmation },
     ]
   },
 
@@ -30,11 +33,11 @@ const routes: RouteRecordRaw[] = [
     component: AdminLayout,
     meta: { requiresAuth: true, role: 'Admin' },
     children: [
-      { path: 'login', name: 'admin.login', component: LoginView, meta: { requiresAuth: false } },
       { path: 'dashboard', name: 'admin.dashboard', component: () => import('@/views/Admin/DashboardView.vue') },
       { path: 'user/create', name: 'admin.create.user', component: () => import('@/views/Admin/CreateUser.vue') },
       { path: 'user/view', name: 'admin.view.user', component: () => import('@/views/Admin/ViewUser.vue') },
       { path: 'event/create', name: 'admin.create.event', component: () => import('@/views/Admin/CreateEvent.vue') },
+       { path: 'event/view', name: 'admin.view.event', component: () => import('@/views/Admin/EventView.vue') },
       { path: 'invitation/guest', name: 'admin.invitation.guest', component: () => import('@/views/Admin/GuestInvitationView.vue') },
       { path: 'graduation/list', name: 'admin.graduation.list', component: () => import('@/views/Admin/GraduationList.vue') },
       { path: 'invitation/view', name: 'admin.invitation.view', component: () => import('@/views/Scanner/ViewInvitations.vue') },
@@ -48,7 +51,9 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, role: 'Graduand' },
     children: [
       { path: 'dashboard', name: 'graduand.dashboard', component: () => import('@/views/Graduand/DashboardGraduandview.vue') },
-      { path: 'generate/create', name: 'graduand.generate.create', component: () => import('@/views/Graduand/Generate.vue') }
+      { path: 'generate/create', name: 'graduand.generate.create', component: () => import('@/views/Graduand/Generate.vue') },
+       { path: 'gown/status', name: 'graduand.gown.status', component: () => import('@/views/Graduand/GownView.vue') },
+      
     ]
   },
 
@@ -61,6 +66,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'dashboard', name: 'recordOfficer.dashboard', component: () => import('@/views/RecordOfficer/DashboardRecordOfficer.vue') },
       { path: 'gown/create', name: 'recordOfficer.gown.create', component: () => import('@/views/RecordOfficer/GiveGown.vue') },
       { path: 'gown/view', name: 'recordOfficer.gown.view', component: () => import('@/views/RecordOfficer/ViewGown.vue') },
+        { path: 'pickup/view', name: 'recordOfficer.pickup.view', component: () => import('@/views/RecordOfficer/ViewPickup.vue') },
     ]
   },
 
@@ -115,7 +121,7 @@ router.beforeEach(async (to, from, next) => {
 
   // 2. Check Authentication
   if (to.meta.requiresAuth && !token) {
-    return next({ name: 'admin.login' });
+    return next({ name: 'staff.login' });
   }
 
   // 3. Hydrate User state on refresh
@@ -124,7 +130,7 @@ router.beforeEach(async (to, from, next) => {
       await auth.getUser();
     } catch (error) {
       auth.cleanState();
-      return next({ name: 'admin.login' });
+      return next({ name: 'staff.login' });
     }
   }
 

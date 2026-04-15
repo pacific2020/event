@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import DataTable from '@/components/DataTable.vue'
 import { useAuthStore } from '@/store/auth'
-import { useQuery, useQueryClient } from '@tanstack/vue-query'
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/vue-query'
 import { ref, onMounted, watch, computed } from 'vue'
 import axiosInstance from '@/axios'
 import { useToast } from 'vue-toastification'
 import { ChevronDownIcon } from '@heroicons/vue/24/solid'
+import { useRoute } from 'vue-router' 
 
 
 
@@ -13,6 +14,7 @@ import { ChevronDownIcon } from '@heroicons/vue/24/solid'
 // Toast
 // -----------------------------
 const toast = useToast()
+const route = useRoute()
 
 // -----------------------------
 // Query Client
@@ -65,10 +67,21 @@ const fetchUsers = async () => {
   return data
 }
 
-const { data, isLoading, refetch } = useQuery({
+const { data, isLoading, refetch, isFetching } = useQuery({
   queryKey: ['guests', page, search],
-  queryFn: fetchUsers
+  queryFn: fetchUsers,
+   placeholderData: keepPreviousData,
+  staleTime: 0
 })
+
+// ✅ NEW: Manual/Route Refresh Logic
+const refreshData = async () => {
+  search.value = ''
+  page.value = 1
+  // Clear the cache for this specific key to avoid "flickering" old data
+  queryClient.removeQueries({ queryKey: ['guests'] })
+  await refetch()
+}
 
 // -----------------------------
 // Computed Table Data
@@ -84,10 +97,16 @@ watch(search, () => {
   refetch() // Refetch when search changes
 })
 
+
 watch(page, () => {
   refetch() // Refetch when page changes
 })
 
+
+// ✅ Watch route to clear old data when navigating back to this view
+watch(() => route.path, () => {
+  refreshData()
+})
 // -----------------------------
 // Pagination Change
 // -----------------------------
@@ -141,6 +160,7 @@ onMounted(() => {
             :current-page="page"
             :total-pages="totalPages"
             @update:page="changePage"
+             @refresh="refreshData"
             v-model:search="search"
             class="w-full"
           >

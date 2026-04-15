@@ -1,6 +1,6 @@
 import { defineStore } from "pinia"
 import { ref, reactive, watch } from "vue"
-import type { GraduationList } from "@/types"
+import type { GraduationList } from "@/types/index"
 import router from "@/router"
 import axiosInstance from "@/axios"
 import { useToast } from 'vue-toastification'
@@ -13,6 +13,7 @@ export const useGraduandStore = defineStore("graduand", () => {
     const savedData = localStorage.getItem('graduand_data');
     const user = ref<GraduationList | null>(savedData ? JSON.parse(savedData) : null)
     const gownData = ref<any>(null) 
+    const pickupData = ref<any>(null) // New: Stores campus selection
     const isLoggedIn = ref(!!savedData)
     const loading = ref(false)
 
@@ -38,38 +39,50 @@ export const useGraduandStore = defineStore("graduand", () => {
         }
     }
 
-   const { data: polledGown, isFetching: isGownLoading } = useQuery({
-    queryKey: ['gownStatus', () => user.value?.reg_no],
-    queryFn: async () => {
-        if (!user.value?.reg_no) return null;
+    /**
+     * ✅ NEW: Get Pickup Location with "Gatekeeper" logic
+     * This prevents redundant DB requests if pickupData is already set.
+     */
+    const getPickupLocation = async (force = false) => {
+        if (!user.value?.reg_no) return;
+        if (pickupData.value && !force) return; // Stop redundant requests
+
         try {
-            const response = await axiosInstance.get(`/view-gown/${user.value.reg_no}`);
-            
-            // ✅ IF API returns 404 or empty data, return null
-            if (!response.data || (Array.isArray(response.data) && response.data.length === 0)) {
-                return null;
-            }
-
-            return Array.isArray(response.data) ? response.data[0] : response.data;
-        } catch (error: any) {
-            // ✅ If the record is deleted and the API throws a 404, return null
-            if (error.response?.status === 404) return null;
-            throw error;
+            const { data } = await axiosInstance.get(`/view-gown-pickup/${user.value.reg_no}`);
+            pickupData.value = data;
+        } catch (e) {
+            pickupData.value = null;
         }
-    },
-    enabled: () => !!user.value?.reg_no && isLoggedIn.value,
-    refetchInterval: 2000, 
-});
+    }
 
-// ✅ CRITICAL: Ensure we sync 'null' values too!
-watch(polledGown, (newValue) => {
-    // We remove the "if (newValue)" check so that null updates the state
-    gownData.value = newValue || null;
-}, { immediate: true });
+    // --- TanStack Query for Gown Status (Live Polling) ---
+    const { data: polledGown, isFetching: isGownLoading } = useQuery({
+        queryKey: ['gownStatus', () => user.value?.reg_no],
+        queryFn: async () => {
+            if (!user.value?.reg_no) return null;
+            try {
+                const response = await axiosInstance.get(`/view-gown/${user.value.reg_no}`);
+                if (!response.data || (Array.isArray(response.data) && response.data.length === 0)) {
+                    return null;
+                }
+                return Array.isArray(response.data) ? response.data[0] : response.data;
+            } catch (error: any) {
+                if (error.response?.status === 404) return null;
+                throw error;
+            }
+        },
+        enabled: () => !!user.value?.reg_no && isLoggedIn.value,
+        refetchInterval: 5000, // Increased slightly for better performance
+    });
+
+    watch(polledGown, (newValue) => {
+        gownData.value = newValue || null;
+    }, { immediate: true });
 
     const cleanState = () => {
         user.value = null;
         gownData.value = null;
+        pickupData.value = null;
         isLoggedIn.value = false;
         localStorage.removeItem('token');
         localStorage.removeItem('graduand_data');
@@ -119,12 +132,14 @@ watch(polledGown, (newValue) => {
     return {
         user,
         gownData,
-        isGownLoading, // Useful for showing a small spinner in UI
+        pickupData, // Exported
+        isGownLoading,
         isLoggedIn,
         loading,
         setUser,
         logout,
         getUser,
+        getPickupLocation, // Exported
         handleSubmit,
         form,
         errors,

@@ -20,7 +20,7 @@ class UserCreatedMail extends Mailable
         $this->user = $user;
         $this->password = $password;
         // Fetch from .env, fallback to localhost if missing
-        $this->loginUrl = config('app.frontend_url', env('FRONTEND_URL')) . '/login';
+        $this->loginUrl = config('app.frontend_url', env('FRONTEND_URL')) . '/staff/login';
     }
 
     public function build()

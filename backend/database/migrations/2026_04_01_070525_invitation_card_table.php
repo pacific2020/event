@@ -11,9 +11,10 @@ return new class extends Migration
      */
     public function up(): void
     {
-          Schema::create('invitation_cards', function (Blueprint $table) {
+        Schema::create('invitation_cards', function (Blueprint $table) {
             $table->id();
 
+            // Original Fields
             $table->string('reg_no')->nullable();
             $table->string('secret_key');
             $table->string('fullname')->nullable();
@@ -26,18 +27,28 @@ return new class extends Migration
 
             $table->string('status')->nullable();
             $table->string('approval')->nullable();
-            $table->string('type')->nullable();
+            $table->string('type')->nullable(); // e.g., 'graduand' or 'parent'
+
+            // --- New Logistics Fields ---
+            $table->string('city')->nullable();
+            $table->string('province')->nullable();
+            $table->string('district')->nullable();
+            $table->string('sector')->nullable();
+            $table->string('cell')->nullable();
+            $table->string('village')->nullable();
+            $table->string('stay_overnight')->nullable(); // To store 'Yes' or 'No'
+
+               $table->string('platenumber')->nullable(); // To store 'Yes' or 'No'
+            // ----------------------------
 
             $table->string('scanned')->nullable();
             $table->dateTime('date_generated')->nullable();
-
             $table->dateTime('date_scanned')->nullable();
             $table->string('entrance_user_id')->nullable();
             $table->string('pdf')->nullable();
             $table->boolean('is_active')->default(true);
             $table->timestamps();
         });
-        //
     }
 
     /**
@@ -45,9 +56,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-       Schema::rename('invitation_cards');
+        Schema::dropIfExists('invitation_cards');
     }
 };
-
-
-

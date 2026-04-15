@@ -57,6 +57,14 @@ Route::apiResource('/createEvent', CreateEventController::class)
 
 Route::get('/eventsPublic', [CreateEventController::class, 'showPublic']);
 
+Route::get('/eventsCount', [CreateEventController::class, 'getStats']);
+Route::post('/guest/confirm-attendance', [InvitationController::class, 'confirmAttendance']);
+
+
+Route::middleware('auth:sanctum')->get('/viewEvent', [CreateEventController::class, 'viewEvent']);
+Route::middleware('auth:sanctum')->delete('/deleteEvent/{id}', [CreateEventController::class, 'deleteEvent']);
+
+
 
 Route::middleware('auth:sanctum')->get('/viewGuestInvitation', [excelController::class, 'viewGuestInvitation']);
 
@@ -93,6 +101,8 @@ Route::middleware('auth:sanctum')->post('/GraduandLogout', function (Request $re
 Route::middleware('auth:sanctum')->get('/get-graduand', [GraduationListController::class, 'showGraduand']);
 
 
+
+Route::middleware('auth:sanctum')->get('/gown-stats/{user_id}', [gownController::class, 'getgownStats']);
 Route::middleware('auth:sanctum')->post('/issue-gown', [gownController::class, 'issueGown']);
 
 
@@ -104,6 +114,12 @@ Route::middleware('auth:sanctum')->delete('/deleteGown/{id}', [gownController::c
 Route::middleware('auth:sanctum')->post('/returnGown/{id}', [gownController::class, 'returnGown']);
 
 
+Route::middleware('auth:sanctum')->post('/set-gown-pickup', [PickupplaceController::class, 'updatePickup']);
+
+Route::middleware('auth:sanctum')->get('/view-gown-pickup/{reg_no}', [PickupplaceController::class, 'viewPickup']);
+
+Route::middleware('auth:sanctum')->get('/view-gown-pickup-per-college/{collegeId}', [PickupplaceController::class, 'viewPickupperCollege']);
+Route::middleware('auth:sanctum')->delete('/deletePickUp/{id}', [PickupplaceController::class, 'deletePickUp']);
 
 Route::middleware('auth:sanctum')->get('/view-gown/{reg_no}', [PickupplaceController::class, 'ViewGown']);
 
@@ -122,6 +138,10 @@ Route::middleware('auth:sanctum')->get('/scanner-stats/{user_id}', [InvitationCo
 Route::middleware('auth:sanctum')->get('/scanner-stats-admin/{user_id}', [InvitationController::class, 'getScannerStatsByAdmin']);
 
 Route::middleware('auth:sanctum')->post('/auto-scan/{secretKey}', [InvitationController::class, 'viewByQr']);
+
+
+
+
 
 
 

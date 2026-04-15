@@ -1,42 +1,27 @@
 <script setup lang="ts">
 import DataTable from '@/components/DataTable.vue'
 import { useAuthStore } from '@/store/auth'
-import { useQuery, useQueryClient } from '@tanstack/vue-query'
+import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/vue-query'
 import { ref, onMounted, watch, computed } from 'vue'
+import { useRoute } from 'vue-router' 
 import axiosInstance from '@/axios'
 import { useToast } from 'vue-toastification'
-import { ChevronDownIcon } from '@heroicons/vue/24/solid'
+import { ChevronDownIcon, ArrowPathIcon } from '@heroicons/vue/24/solid' // ✅ Added Refresh Icon
 
 const loading = ref(false)
 const loadingReminder = ref(false)
-
-// -----------------------------
-// Toast
-// -----------------------------
+const route = useRoute()
 const toast = useToast()
-
-// -----------------------------
-// Query Client
-// -----------------------------
 const queryClient = useQueryClient()
-
-// -----------------------------
-// Auth
-// -----------------------------
 const auth = useAuthStore()
 
-// -----------------------------
-// Dropdown state
-// -----------------------------
+// --- Dropdown state ---
 const openDropdown = ref<number | null>(null)
-
 function toggleDropdown(id: number) {
   openDropdown.value = openDropdown.value === id ? null : id
 }
 
-// -----------------------------
-// Table Columns
-// -----------------------------
+// --- Table Columns ---
 const columns = [
   { label: 'ID', field: 'id' },
   { label: 'Position', field: 'position' },
@@ -46,64 +31,61 @@ const columns = [
   { label: 'Status', field: 'is_active' }
 ]
 
-// -----------------------------
-// Pagination & Search
-// -----------------------------
+// --- Pagination & Search ---
 const page = ref(1)
 const search = ref('')
 
-// -----------------------------
-// Fetch Guest Invitations
-// -----------------------------
+// --- Fetch Logic ---
 const fetchUsers = async () => {
   const params: any = { page: page.value }
-
   if (search.value.trim() !== '') {
     params.search = search.value.trim()
   }
-
   const { data } = await axiosInstance.get('/viewGuestInvitation', { params })
   return data
 }
 
-const { data, isLoading, refetch } = useQuery({
+const { data, isLoading, refetch, isFetching } = useQuery({
   queryKey: ['guests', page, search],
-  queryFn: fetchUsers
+  queryFn: fetchUsers,
+  placeholderData: keepPreviousData,
+  staleTime: 0
 })
 
-// -----------------------------
-// Computed Table Data
-// -----------------------------
+// ✅ NEW: Manual/Route Refresh Logic
+const refreshData = async () => {
+  search.value = ''
+  page.value = 1
+  // Clear the cache for this specific key to avoid "flickering" old data
+  queryClient.removeQueries({ queryKey: ['guests'] })
+  await refetch()
+}
+
+// --- Computed Table Data ---
 const tableRows = computed(() => data.value?.data || [])
 const totalPages = computed(() => data.value?.last_page || 1)
 
-// -----------------------------
-// Watchers for Search & Page
-// -----------------------------
+// --- Watchers ---
+// ✅ Reset page to 1 on search, but don't refetch manually (useQuery handles it via dependency)
 watch(search, () => {
   page.value = 1
-  refetch() // Refetch when search changes
 })
 
-watch(page, () => {
-  refetch() // Refetch when page changes
+// ✅ Watch route to clear old data when navigating back to this view
+watch(() => route.path, () => {
+  refreshData()
 })
 
-// -----------------------------
-// Pagination Change
-// -----------------------------
 const changePage = (newPage: number) => {
   page.value = newPage
 }
 
-// -----------------------------
-// Delete Guest
-// -----------------------------
+// --- Actions (Delete, Reminder, Invitations) ---
 const deleteUser = async (id: number) => {
+  if (!confirm('Are you sure you want to delete this guest?')) return
   try {
     await axiosInstance.delete(`/deleteGuest/${id}`)
     toast.success('Deleted successfully')
-
     queryClient.invalidateQueries({ queryKey: ['guests'] })
   } catch (error: any) {
     toast.error(error.response?.data?.message || 'Delete failed')
@@ -113,7 +95,6 @@ const deleteUser = async (id: number) => {
 const handleReminder = async () => {
   loadingReminder.value = true
   try {
-    // Replace with your actual reminder endpoint
     const { data } = await axiosInstance.post('/send-reminders') 
     toast.success(data.message || 'Reminders sent successfully')
   } catch (error: any) {
@@ -123,21 +104,12 @@ const handleReminder = async () => {
   }
 }
 
-// Updated handleSubmit for Invitations
 const handleSubmit = async () => {
-  if (loading.value) return // Prevent double triggers
-  
+  if (loading.value) return 
   loading.value = true
   try {    
     const { data } = await axiosInstance.post('/send-invitations')
-    
-    if (data.status === 'success') {
-      toast.success(data.message || 'Invitations sent')
-    } else {
-      toast.error(data.message || 'Invitations not sent')     
-    }
-
-    // Refresh the table data
+    toast.success(data.message || 'Invitations sent')
     queryClient.invalidateQueries({ queryKey: ['guests'] })
   } catch (error: any) {
     toast.error(error.response?.data?.message || 'Error sending invitations')
@@ -146,9 +118,6 @@ const handleSubmit = async () => {
   }
 }
 
-// -----------------------------
-// Mounted
-// -----------------------------
 onMounted(() => {
   auth.getUser()
 })
@@ -156,39 +125,56 @@ onMounted(() => {
 
 <template>
   <div class="flex min-h-screen bg-gray-100">
-
     <div class="flex-1 p-6">
       <div class="flex justify-between items-center mb-6">
-        <h1 class="text-xl font-bold">Guest Invitations</h1>
+        <div class="flex items-center gap-4">
+          <h1 class="text-xl font-bold">Guest Invitations</h1>
+          <button 
+            @click="refreshData" 
+            class="p-2 bg-white rounded-full shadow-sm hover:bg-gray-50 transition-all group"
+            :class="{ 'animate-spin': isFetching }"
+            title="Refresh Table"
+          >
+            <ArrowPathIcon class="w-5 h-5 text-gray-600 group-hover:text-blue-600" />
+          </button>
+        </div>
 
         <div class="flex gap-2">
           <button 
             @click="handleSubmit"
             :disabled="loading"
-            class="bg-black text-white px-4 py-2 rounded hover:bg-gray-800 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
+            class="bg-black text-white px-4 py-2 rounded hover:bg-gray-800 disabled:bg-gray-400 flex items-center"
           >
-            <span v-if="loading" class="mr-2 animate-spin">⏳</span>
+            <span v-if="loading" class="mr-2 animate-spin text-lg">↻</span>
             {{ loading ? 'Sending...' : 'Send Invitations' }}
           </button>
 
           <button 
             @click="handleReminder"
             :disabled="loadingReminder"
-            class="bg-blue-700 text-white px-4 py-2 rounded hover:bg-blue-800 disabled:bg-blue-400 disabled:cursor-not-allowed flex items-center"
+            class="bg-blue-700 text-white px-4 py-2 rounded hover:bg-blue-800 disabled:bg-blue-400 flex items-center"
           >
-            <span v-if="loadingReminder" class="mr-2 animate-spin">⏳</span>
+            <span v-if="loadingReminder" class="mr-2 animate-spin text-lg">↻</span>
             {{ loadingReminder ? 'Processing...' : 'Send Reminder' }}
           </button>
         </div>
       </div>
 
-      <section class="p-4 bg-white rounded-lg shadow">
+      <section class="p-4 bg-white rounded-lg shadow relative">
+        <div v-if="isLoading || isFetching" class="absolute inset-0 bg-white/50 backdrop-blur-[1px] z-10 flex items-center justify-center rounded-lg">
+           <div class="flex flex-col items-center">
+              <span class="animate-spin text-3xl mb-2 text-blue-600">↻</span>
+              <p class="text-sm font-medium text-gray-500">Syncing Guests...</p>
+           </div>
+        </div>
+
         <DataTable
           :columns="columns"
           :rows="tableRows"
           :current-page="page"
           :total-pages="totalPages"
           @update:page="changePage"
+          @refresh="refreshData"
           v-model:search="search"
         >
           <template #actions="{ row }">
@@ -215,10 +201,6 @@ onMounted(() => {
             </div>
           </template>
         </DataTable>
-
-        <div v-if="isLoading" class="text-center py-10 text-gray-500">
-          <p>Loading guests...</p>
-        </div>
       </section>
     </div>
   </div>

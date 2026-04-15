@@ -37,18 +37,7 @@ const { data: stats, isLoading } = useQuery({
   <div class="flex min-h-screen bg-slate-50">
 
     <div class="flex-1">
-      <header class="bg-white border-b border-slate-200 px-8 py-4 flex justify-between items-center">
-        <h1 class="text-xl font-bold text-slate-800 flex items-center gap-2">
-          <PresentationChartBarIcon class="w-6 h-6 text-indigo-600" />
-          Admin Control Center
-        </h1>
-        <div class="flex items-center gap-3">
-          <span class="text-sm font-medium text-slate-600">{{ auth.user?.fullname }}</span>
-          <div class="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs font-bold uppercase">
-            {{ auth.user?.fullname?.charAt(0) }}
-          </div>
-        </div>
-      </header>
+
 
       <main class="p-8 max-w-7xl mx-auto">
         <div class="mb-8">

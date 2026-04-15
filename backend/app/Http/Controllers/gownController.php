@@ -4,6 +4,9 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Gown;
+use App\Models\InvitationCard;
+use App\Jobs\ProcessInvitationJob;
+
 
 class gownController extends Controller
 {
@@ -11,14 +14,17 @@ class gownController extends Controller
     $request->validate([
         'reg_no' => 'required|exists:graduation_list,reg_no',
         'expected_returning_date' => 'required|date',
+        // Validate status to ensure it's "Issued" before sending emails
+        'status' => 'required'
     ]);
 
-    // Check if they already have a gown issued
+    // 1. Check if they already have a gown issued
     $exists = Gown::where('reg_no', $request->reg_no)->first();
     if ($exists) {
         return response()->json(['message' => 'This student already has an issued gown.'], 422);
     }
 
+    // 2. Create the Gown record
     $gown = Gown::create([
         'user_id' => $request->user_id,
         'reg_no' => $request->reg_no,
@@ -28,7 +34,26 @@ class gownController extends Controller
         'returned_date' => null,
     ]);
 
-    return response()->json(['status' => 'success','message' => 'Gown assigned to ' . $request->reg_no]);
+    // 3. Check for Invitation Cards and send emails if status is "Issued"
+    if ($gown->status === 'Issued') {
+        $invitations = InvitationCard::where('reg_no', $request->reg_no)->get();
+
+        if ($invitations->isNotEmpty()) {
+            // Get the email from the first record (they should all be the same)
+            $email = $invitations->first()->email;
+
+            // Collect all IDs for this student (Graduand + Parents)
+            $cardIds = $invitations->pluck('id')->toArray();
+
+            // 4. Dispatch the Job
+            ProcessInvitationJob::dispatch($email, $cardIds);
+        }
+    }
+
+    return response()->json([
+        'message' => 'Gown issued successfully' . ($gown->status === 'Issued' ? ' and invitations well sent to your email.' : '.'),
+        'gown' => $gown
+    ]);
 }
 
 public function showGown(Request $request)
@@ -88,4 +113,33 @@ public function returnGown(Request $request, $id)
         'message' => 'Gown marked as returned'
     ]);
 }
+
+
+public function getgownStats($user_id)
+{
+    try {
+        return response()->json([
+            // Total gowns in the entire system
+            'total_invitations' => Gown::count(),
+
+            // Gowns issued by THIS specific user (staff member)
+            'totalIssued' => Gown::where('status', 'Issued')
+                ->where('user_id', $user_id)
+                ->count(),
+
+            // Gowns returned to THIS specific user
+            // Note: Changed from InvitationCard to Gown to keep logic consistent
+            'totalReturned' => Gown::where('status', 'Returned')
+                ->where('user_id', $user_id)
+                ->count(),
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Could not fetch gown statistics'
+        ], 500);
+    }
+}
+
+
 }

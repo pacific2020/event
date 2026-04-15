@@ -40,4 +40,54 @@ public function ViewGown($reg_no) {
     return response()->json($gown);
 }
 
+public function viewPickup($reg_no)
+{
+    // Use first() to get a single object instead of a list
+    $gown = Pickupplace::with('college')
+        ->where('reg_no', $reg_no)
+        ->first();
+
+    if (!$gown) {
+        return response()->json(['message' => 'Not Found'], 404);
+    }
+
+    return response()->json($gown);
+}
+
+// Route: Route::get('/view-gown-pickup-per-college/{collegeId}', ...)
+
+public function viewPickupperCollege(Request $request, $collegeId) // Must match {collegeId}
+{
+    // Initialize query
+    $query = Pickupplace::with(['college'])
+        ->where('college_id', $collegeId); // Now matches parameter
+
+    // Implement Search Filter
+    if ($request->filled('search')) {
+        $searchTerm = $request->search;
+
+        $query->where(function($q) use ($searchTerm) {
+            $q->where('reg_no', 'LIKE', "%{$searchTerm}%")
+              ->orWhereHas('college', function($collegeQuery) use ($searchTerm) {
+                  $collegeQuery->where('short_name', 'LIKE', "%{$searchTerm}%");
+              });
+        });
+    }
+
+    // Return Paginated Data
+    return response()->json($query->latest()->paginate(10));
+}
+
+public function deletePickUp($id)
+{
+    $record = Pickupplace::find($id);
+
+    if (!$record) {
+        return response()->json(['message' => 'Record not found'], 404);
+    }
+
+    $record->delete();
+
+    return response()->json(['message' => 'Deleted successfully'], 200);
+}
 }

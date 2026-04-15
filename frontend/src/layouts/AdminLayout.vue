@@ -4,8 +4,15 @@
     <Sidebar />
 
     <div class="flex-1 flex flex-col">
-      <header class="h-16 bg-white shadow-sm flex items-center px-8">
+      <header class="h-16 bg-white shadow-sm border-b border-slate-200 px-8 py-4 flex justify-between items-center">
         <h1 class="text-xl font-semibold text-gray-700">System Portal</h1>
+
+             <div class="flex right-0 items-center gap-3">
+          <span class="text-sm font-medium text-slate-600">{{ auth.user?.fullname }}</span>
+          <div class="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs font-bold">
+            {{ auth.user?.fullname?.charAt(0) }}
+          </div>
+        </div>
       </header>
 
       <main class="p-6">
@@ -18,4 +25,7 @@
 
 <script setup>
 import Sidebar from '@/components/AdminBar/Sidebar/Sidebar.vue' // Adjust path to your sidebar
+import { useAuthStore } from '@/store/auth';
+
+const auth = useAuthStore();
 </script>

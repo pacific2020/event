@@ -97,14 +97,17 @@ onMounted(async () => {
       </template>
 
       <template v-else-if="auth.user.position === 'RecordOfficer'">
+         <router-link to="/RecordOfficer/dashboard" class="menu-btn">Dashboard</router-link>
         <button @click="toggleMenu('gown')" class="menu-btn">
-          <span>🎓 Gown Management</span>
+          <span>🎓 Gown</span>
           <span v-if="!isCollapsed">{{ openMenus.gown ? '−' : '+' }}</span>
         </button>
         <div v-if="openMenus.gown && !isCollapsed" class="pl-6 mt-1 space-y-1">
           <router-link to="/RecordOfficer/gown/create" class="sub-link">Issue Gown</router-link>
           <router-link to="/RecordOfficer/gown/view" class="sub-link">Gown Logs</router-link>
         </div>
+          <router-link to="/RecordOfficer/pickup/view" class="sub-link">Pickup</router-link>
+
       </template>
 
       <template v-else-if="auth.user.position === 'Protocol'">
