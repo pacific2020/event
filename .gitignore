@@ -1,4 +1,4 @@
-backend/.env
-backend/config/cors.php 
-frontend/src/axios.ts
-frontend/.env
+# backend/.env
+# backend/config/cors.php 
+# frontend/src/axios.ts
+# frontend/.env
