@@ -41,7 +41,7 @@ const closeDropdown = (e: MouseEvent) => {
 const columns = [
   { label: 'ID', field: 'id' },
   { label: 'Type', field: 'type' },
-  { label: 'Reg No', field: 'reg_no' },
+  { label: 'Role', field: 'display_identifier' },
   { label: 'Fullname', field: 'fullname' },
   { label: 'ID Number', field: 'graduate_idnumber' },
   { label: 'Phone', field: 'phonenumber' },
@@ -87,6 +87,7 @@ const tableRows = computed(() => {
   return usersData.value?.data.map((item: any) => ({
     ...item,
     scannedBy: item.scanner?.fullname ?? 'N/A',
+    display_identifier: item.reg_no ?? item.position,
     created_at: item.created_at 
       ? new Date(item.created_at).toLocaleString('en-US', {
           year: 'numeric', month: 'short', day: 'numeric',

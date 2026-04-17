@@ -44,11 +44,11 @@ class ExcelController extends Controller
 
             foreach ($data as $index => $row) {
                 // Basic validation: skip if name (row 0) or email (row 1) is missing
-                if (empty(trim($row[0])) || empty(trim($row[1]))) {
+                if (empty(trim($row[0])) || empty(trim($row[2]))) {
                     continue;
                 }
 
-                $email = trim($row[1]);
+                $email = trim($row[2]);
 
                 // 4. Duplicate Check: Skip if this email already exists in the database
                 if (InvitationCard::where('email', $email)->exists()) {

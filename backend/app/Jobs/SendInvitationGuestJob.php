@@ -8,7 +8,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Mail; // ✅ Essential for Laravel Mail
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use setasign\Fpdi\Fpdi;
@@ -27,99 +27,188 @@ class SendInvitationGuestJob implements ShouldQueue
     public function __construct($rowData)
     {
         $this->rowData = $rowData;
-        $this->confirmUrl = config('app.frontend_url', env('FRONTEND_URL')) . '/guest/confirmation';
+        $this->confirmUrl = url('/guest/confirmation');
+
+
     }
 
     public function handle()
     {
-        $name = trim($this->rowData[0]);
-        $email = trim($this->rowData[1]);
-
-        if (InvitationCard::where('email', $email)->exists()) {
-            return;
-        }
-
-        $qrDir = storage_path('app/public/qrcodes');
-        $pdfDir = storage_path('app/public/invitations');
-        $templatePath = storage_path('app/public/templates/Graduation_Invitation_final.pdf');
-
-        if (!File::exists($qrDir)) File::makeDirectory($qrDir, 0755, true);
-        if (!File::exists($pdfDir)) File::makeDirectory($pdfDir, 0755, true);
-
-        $secret_key = strtoupper(uniqid('INV-'));
-        $qrPath = $qrDir . '/' . $secret_key . '.png';
-        $pdfFileName = $secret_key . '.pdf';
-        $pdfPath = $pdfDir . '/' . $pdfFileName;
-
         try {
-            // 1. Generate QR
+
+            $position = trim($this->rowData[0] ?? '');
+            $fullname = trim($this->rowData[1] ?? '');
+            $email    = trim($this->rowData[2] ?? '');
+            $phone    = trim($this->rowData[3] ?? '');
+            $type     = trim($this->rowData[4] ?? '');
+
+            if (empty($email)) {
+                throw new \Exception("Email is empty");
+            }
+
+            if (InvitationCard::where('email', $email)->exists()) {
+                Log::info("Skipped existing email: {$email}");
+                return;
+            }
+
+            $qrDir        = storage_path('app/public/qrcodes');
+            $pdfDir       = storage_path('app/public/invitations');
+            $templatePath = storage_path('app/public/templates/guest_invitation.pdf');
+
+            if (!File::exists($qrDir)) {
+                File::makeDirectory($qrDir, 0755, true);
+            }
+
+            if (!File::exists($pdfDir)) {
+                File::makeDirectory($pdfDir, 0755, true);
+            }
+
+            if (!File::exists($templatePath)) {
+                throw new \Exception("Template missing: {$templatePath}");
+            }
+
+            $secret_key = strtoupper(uniqid('INV-'));
+            $qrPath = $qrDir . '/' . $secret_key . '.png';
+            $pdfFileName = $secret_key . '.pdf';
+            $pdfPath = $pdfDir . '/' . $pdfFileName;
+
+            /*
+            |--------------------------------------------------------------------------
+            | QR CODE GENERATION
+            |--------------------------------------------------------------------------
+            */
             $options = new QROptions([
                 'version' => 5,
                 'outputInterface' => QRGdImagePNG::class,
                 'eccLevel' => EccLevel::H,
                 'scale' => 5,
             ]);
+
             (new QRCode($options))->render($secret_key, $qrPath);
 
-            // 2. Generate PDF
+            Log::info("QR generated: {$qrPath}");
+
+            /*
+            |--------------------------------------------------------------------------
+            | PDF GENERATION (ALL PAGES FIXED)
+            |--------------------------------------------------------------------------
+            */
             $pdf = new Fpdi();
-            $pdf->AddPage();
-            if (!File::exists($templatePath)) throw new \Exception("Template missing.");
-            $pdf->setSourceFile($templatePath);
-            $pdf->useTemplate($pdf->importPage(1));
-            $pdf->SetFont('Arial', 'B', 16);
-            $pdf->SetXY(40, 120);
-            $pdf->Cell(100, 50, $name, 0, 0, 'C');
-            $pdf->Image($qrPath, 90, 250, 35, 35);
+
+            $pageCount = $pdf->setSourceFile($templatePath);
+
+            for ($pageNo = 1; $pageNo <= $pageCount; $pageNo++) {
+
+                $tplId = $pdf->importPage($pageNo);
+
+                $size = $pdf->getTemplateSize($tplId);
+
+                $pdf->AddPage($size['orientation'], [$size['width'], $size['height']]);
+
+                $pdf->useTemplate($tplId);
+
+                // Only write content on first page
+                if ($pageNo == 1) {
+
+                    $pdf->SetFont('Arial', '', 12);
+                    $pdf->SetXY(40, 153);
+                    $pdf->Cell(130, 10, $position, 0, 0, 'C');
+
+
+                    $pdf->Image($qrPath, 90, 250, 30, 30);
+                }
+            }
+
             $pdf->Output($pdfPath, 'F');
 
-            // 3. Send Email using Laravel Mail Facade
-            $this->sendEmail($email, $name, $pdfPath);
+            Log::info("PDF generated: {$pdfPath}");
 
-            // 4. Save to DB
+            /*
+            |--------------------------------------------------------------------------
+            | EMAIL SENDING
+            |--------------------------------------------------------------------------
+            */
+            $this->sendEmail($email, $position, $fullname, $pdfPath);
+
+            /*
+            |--------------------------------------------------------------------------
+            | DATABASE SAVE
+            |--------------------------------------------------------------------------
+            */
             InvitationCard::create([
-                'fullname' => $name,
-                'email' => $email,
-                'secret_key' => $secret_key,
-                'status' => 'Sent',
-                'pdf' => $pdfFileName,
-                'date_generated' => now()
+                'position'       => $position,
+                'fullname'       => $fullname,
+                'email'          => $email,
+                'secret_key'     => $secret_key,
+                'status'         => 'Sent',
+                'phonenumber'    => $phone,
+                'type'           => $type,
+                'pdf'            => $pdfFileName,
+                'date_generated' => now(),
             ]);
 
-            if (File::exists($qrPath)) File::delete($qrPath);
+            Log::info("Saved: {$email}");
 
-        } catch (\Exception $e) {
-            Log::error("Job Failed for {$email}: " . $e->getMessage());
-            if (File::exists($qrPath)) File::delete($qrPath);
-            if (File::exists($pdfPath)) File::delete($pdfPath);
+            /*
+            |--------------------------------------------------------------------------
+            | CLEANUP
+            |--------------------------------------------------------------------------
+            */
+            if (File::exists($qrPath)) {
+                File::delete($qrPath);
+            }
+
+        } catch (\Throwable $e) {
+
+            Log::error("JOB FAILED: " . $e->getMessage());
+            Log::error("FILE: " . $e->getFile());
+            Log::error("LINE: " . $e->getLine());
+
+            if (isset($qrPath) && File::exists($qrPath)) {
+                File::delete($qrPath);
+            }
+
+            if (isset($pdfPath) && File::exists($pdfPath)) {
+                File::delete($pdfPath);
+            }
+
             throw $e;
         }
     }
 
-    private function sendEmail($email, $name, $attachment)
+    private function sendEmail($email, $position, $fullname, $attachment)
     {
         try {
-            Log::info("Attempting Laravel Mail to: {$email}");
+
+            $confirmUrl = $this->confirmUrl . '?email=' . urlencode($email);
 
             $data = [
-                'name' => $name,
-                'email' => $email,
-                'confirmUrl' => $this->confirmUrl
+                'name'       => $fullname,
+                'position'   => $position,
+                'email'      => $email,
+                'confirmUrl' => $confirmUrl,
             ];
 
             Mail::send('emails.invitation_guest', $data, function ($message) use ($email, $attachment) {
+
                 $message->to($email)
-                        ->subject('Official Graduation Invitation');
+                        ->subject('Invitation to RP 9th Graduation Ceremony');
+
+                $committee = "pmutuyimana1@rp.ac.rw";
+
+                if (!empty($committee)) {
+                    $message->cc($committee);
+                }
 
                 if (File::exists($attachment)) {
                     $message->attach($attachment);
                 }
             });
 
-            Log::info("Laravel Mail successfully sent to: {$email}");
+            Log::info("Mail sent: {$email}");
 
-        } catch (\Exception $e) {
-            Log::error("Laravel Mail Error for {$email}: " . $e->getMessage());
+        } catch (\Throwable $e) {
+            Log::error("MAIL ERROR: " . $e->getMessage());
             throw $e;
         }
     }
